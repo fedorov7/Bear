@@ -36,19 +36,19 @@ and the post-processing of the output files, which will condensates into a
 
 import argparse
 import collections
-import subprocess
-import json
-import sys
+import contextlib
 import functools
+import itertools
+import json
+import logging
 import os
 import os.path
 import re
 import shlex
-import itertools
-import tempfile
 import shutil
-import contextlib
-import logging
+import subprocess
+import sys
+import tempfile
 
 # Map of ignored compiler option for the creation of a compilation database.
 # This map is used in _split_command method, which classifies the parameters
@@ -88,7 +88,6 @@ IGNORED_FLAGS = {
     '-nologo': 0,
     '-EHsc': 0,
     '-EHa': 0
-
 }  # type: Dict[str, int]
 
 # Known C/C++ compiler wrapper name patterns.
@@ -126,7 +125,6 @@ CompilationCommand = collections.namedtuple(
 
 
 class Category:
-
     def __init__(self, only_use, c_compilers, cxx_compilers):
         self.ignore = only_use
         self.c_compilers = [os.path.basename(cc) for cc in c_compilers]
@@ -199,6 +197,7 @@ def run_command(command, cwd=None):
     :param cwd: the working directory where the command will be executed
     :return: output of the command
     """
+
     def decode_when_needed(result):
         # type: (Any) -> str
         """ check_output returns bytes or string depend on python version """
@@ -209,9 +208,8 @@ def run_command(command, cwd=None):
     try:
         directory = os.path.abspath(cwd) if cwd else os.getcwd()
         logging.debug('exec command %s in %s', command, directory)
-        output = subprocess.check_output(command,
-                                         cwd=directory,
-                                         stderr=subprocess.STDOUT)
+        output = subprocess.check_output(
+            command, cwd=directory, stderr=subprocess.STDOUT)
         return decode_when_needed(output).splitlines()
     except subprocess.CalledProcessError as ex:
         ex.output = decode_when_needed(ex.output).splitlines()
@@ -257,9 +255,10 @@ def command_entry_point(function):
         """ Do housekeeping tasks and execute the wrapped method. """
 
         try:
-            logging.basicConfig(format='%(name)s: %(message)s',
-                                level=logging.WARNING,
-                                stream=sys.stdout)
+            logging.basicConfig(
+                format='%(name)s: %(message)s',
+                level=logging.WARNING,
+                stream=sys.stdout)
             # this hack to get the executable name as %(name)
             logging.getLogger().name = os.path.basename(sys.argv[0])
             return function(*args, **kwargs)
@@ -377,9 +376,8 @@ def parse_exec_trace(filename):
     with open(filename, 'r') as handler:
         try:
             entry = json.load(handler)
-            return Execution(pid=entry['pid'],
-                             cwd=entry['cwd'],
-                             cmd=entry['cmd'])
+            return Execution(
+                pid=entry['pid'], cwd=entry['cwd'], cmd=entry['cmd'])
         except ValueError:
             logging.warning('parse exec trace file: %s FAILED', filename)
             return None
@@ -421,17 +419,17 @@ def create_intercept_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
-        '--version',
-        action='version',
-        version='%(prog)s @BEAR_VERSION@')
+        '--version', action='version', version='%(prog)s @BEAR_VERSION@')
     parser.add_argument(
-        '--verbose', '-v',
+        '--verbose',
+        '-v',
         action='count',
         default=0,
         help="""Enable verbose output from '%(prog)s'. A second, third and
         fourth flags increases verbosity.""")
     parser.add_argument(
-        '--cdb', '-o',
+        '--cdb',
+        '-o',
         metavar='<file>',
         default="compile_commands.json",
         help="""The JSON compilation database.""")
@@ -458,14 +456,16 @@ def create_intercept_parser():
 
     advanced = parser.add_argument_group('advanced options')
     advanced.add_argument(
-        '--append', '-a',
+        '--append',
+        '-a',
         action='store_true',
         help="""Extend existing compilation database with new entries.
         Duplicate entries are detected and not present in the final output.
         The output is not continuously updated, it's done when the build
         command finished. """)
     advanced.add_argument(
-        '--libear', '-l',
+        '--libear',
+        '-l',
         dest='libear',
         default="@DEFAULT_PRELOAD_FILE@",
         action='store',
@@ -477,8 +477,8 @@ def create_intercept_parser():
 
 
 class Compilation:
-    def __init__(self,
-                 compiler, language, phase, flags, source, directory, output):
+    def __init__(self, compiler, language, phase, flags, source, directory,
+                 output):
         """ Constructor for a single compilation.
 
         This method just normalize the paths and initialize values. """
@@ -510,13 +510,16 @@ class Compilation:
         # type: (Compilation) -> Dict[str, Any]
         """ This method creates a compilation database entry. """
 
-        source = os.path.relpath(self.source, self.directory)
+        source = os.path.abspath(self.source)
         output = ['-o', self.output] if self.output else []
         return {
-            'file': source,
-            'arguments':
-                [self.compiler, self.phase] + self.flags + output + [source],
-            'directory': self.directory
+            'file':
+            source,
+            'command':
+            ' '.join([self.compiler, self.phase] + self.flags + output +
+                     [source]),
+            'directory':
+            self.directory
         }
 
     @classmethod
@@ -549,13 +552,14 @@ class Compilation:
         for source in candidate.files if candidate else []:
             output = candidate.output[0] if candidate.output else None
             phase = candidate.phase[0] if candidate.phase else '-c'
-            result = Compilation(directory=execution.cwd,
-                                 source=source,
-                                 compiler=candidate.compiler,
-                                 language=candidate.language,
-                                 phase=phase,
-                                 flags=candidate.flags,
-                                 output=output)
+            result = Compilation(
+                directory=execution.cwd,
+                source=source,
+                compiler=candidate.compiler,
+                language=candidate.language,
+                phase=phase,
+                flags=candidate.flags,
+                output=output)
             if os.path.isfile(result.source):
                 yield result
 
@@ -606,12 +610,13 @@ class Compilation:
             return None
 
         # the result of this method
-        result = CompilationCommand(compiler=compiler_and_arguments[0],
-                                    language=compiler_and_arguments[1],
-                                    phase=[],
-                                    flags=[],
-                                    files=[],
-                                    output=[])
+        result = CompilationCommand(
+            compiler=compiler_and_arguments[0],
+            language=compiler_and_arguments[1],
+            phase=[],
+            flags=[],
+            files=[],
+            output=[])
         # iterate on the compile options
         args = iter(compiler_and_arguments[2])
         for arg in args:

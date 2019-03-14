@@ -609,6 +609,9 @@ class Compilation:
         if compiler_and_arguments is None:
             return None
 
+        # regexp for link to file argument
+        file_link = re.compile(r'(?=@)\S+')
+
         # the result of this method
         result = CompilationCommand(
             compiler=compiler_and_arguments[0],
@@ -623,6 +626,9 @@ class Compilation:
             # quit when compilation pass is not involved
             if arg in {'-E', '-cc1', '-cc1as', '-M', '-MM', '-###'}:
                 return None
+            if file_link.match(arg):
+                with open(arg[1:], 'r') as file_args:
+                    result.flags.extend(file_args.read().split("\\s"))
             elif arg in {'-S', '-c'}:
                 result.phase.append(arg)
             # ignore some flags
